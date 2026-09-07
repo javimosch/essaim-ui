@@ -192,12 +192,13 @@ func (s *Server) Routes() http.Handler {
 
 	mux.HandleFunc("POST /api/torrents", s.authed(func(w http.ResponseWriter, r *http.Request, sess session) {
 		var body struct {
-			Source  string `json:"source"`
-			Dir     string `json:"dir"`
-			Seed    bool   `json:"seed"`
-			UpLimit int    `json:"up_limit"`
-			Note    string `json:"note"`
-			Tag     string `json:"tag"`
+			Source   string `json:"source"`
+			Dir      string `json:"dir"`
+			Seed     bool   `json:"seed"`
+			UpLimit  int    `json:"up_limit"`
+			RatioPct int    `json:"ratio_limit_pct"`
+			Note     string `json:"note"`
+			Tag      string `json:"tag"`
 		}
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&body); err != nil {
 			fail(w, http.StatusBadRequest, "validation_error", "body must be JSON")
@@ -211,7 +212,7 @@ func (s *Server) Routes() http.Handler {
 		if dir == "" {
 			dir = s.Dir
 		}
-		t, err := s.Essaim.Add(body.Source, dir, body.Seed, body.UpLimit)
+		t, err := s.Essaim.Add(body.Source, dir, body.Seed, body.UpLimit, body.RatioPct)
 		if err != nil {
 			fail(w, http.StatusBadGateway, "essaim_error", err.Error())
 			return
@@ -276,6 +277,39 @@ func (s *Server) Routes() http.Handler {
 			}
 		}
 		writeJSON(w, http.StatusOK, res)
+	}))
+
+	// Pointers, not values: a field the browser omitted must stay omitted all
+	// the way to the daemon, or changing the cap would silently reset the
+	// ratio to zero.
+	mux.HandleFunc("PATCH /api/torrents/{id}", s.authed(func(w http.ResponseWriter, r *http.Request, sess session) {
+		var body struct {
+			Seed     *bool `json:"seed"`
+			UpLimit  *int  `json:"up_limit"`
+			RatioPct *int  `json:"ratio_limit_pct"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&body); err != nil {
+			fail(w, http.StatusBadRequest, "validation_error", "body must be JSON")
+			return
+		}
+		if body.Seed == nil && body.UpLimit == nil && body.RatioPct == nil {
+			fail(w, http.StatusBadRequest, "validation_error", "nothing to change")
+			return
+		}
+		if body.UpLimit != nil && *body.UpLimit < 0 {
+			fail(w, http.StatusBadRequest, "validation_error", "upload cap cannot be negative")
+			return
+		}
+		if body.RatioPct != nil && *body.RatioPct < 0 {
+			fail(w, http.StatusBadRequest, "validation_error", "ratio cannot be negative")
+			return
+		}
+		t, err := s.Essaim.Patch(r.PathValue("id"), body.Seed, body.UpLimit, body.RatioPct)
+		if err != nil {
+			fail(w, http.StatusBadGateway, "essaim_error", err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "torrent": t})
 	}))
 
 	mux.HandleFunc("POST /api/labels", s.authed(func(w http.ResponseWriter, r *http.Request, sess session) {

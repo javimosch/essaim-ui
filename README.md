@@ -45,7 +45,7 @@ users, one shared torrent, and neither sees the other's note.
 Set when you add a torrent:
 
 - **the full download path** — typed in, or defaulted from `ESSAIM_UI_DIR`
-- **seed on/off**, and an **upload cap in KB/s**
+- **seed on/off**, an **upload cap in KB/s**, and a **stop-at ratio**
 - a private note
 
 Shown per torrent: the **full path on disk**, state, pieces, bytes, peers, seed
@@ -62,19 +62,19 @@ Removing offers two actions, because they are not the same decision:
   not resolved yet is refused outright rather than falling back to deleting the
   directory itself.
 
-### Two things it cannot do yet, and why
+Every torrent row also carries live controls — **seed on/off**, the **upload
+cap**, and a **stop-at ratio** — applied through `PATCH /torrents/{id}`. Only
+the fields you changed are sent, so adjusting a cap cannot silently reset a
+ratio. The daemon speaks percent (it has no floats); the UI speaks ratios and
+converts at the edge, so you type `0.5` and it sends `50`.
 
-**Changing speed or seeding after a torrent is added.** essaim's daemon exposes
-`GET`/`POST /torrents` and `GET`/`DELETE /torrents/{id}` — there is no `PATCH`,
-so `seed` and `up_limit` are fixed at add time. The UI says so next to the
-controls rather than offering a switch that silently does nothing.
+Both of those needed essaim to grow the capability first — a `PATCH` route and
+a ratio concept — rather than being faked here by a process second-guessing the
+daemon that owns the torrents. They landed in essaim alongside `essaim set`.
 
-**A seeding *ratio* limit** (`0.5`). essaim's cap is `up_limit` in **KB/s** — a
-rate, not a ratio — and it tracks `uploaded_bytes` but has no concept of a stop
-condition. A ratio limit needs essaim to grow one; it cannot be faked here
-without a background process second-guessing the daemon that owns the torrents.
+### Still not possible
 
-There is also no **download** cap anywhere in essaim; `up_limit` is upload only.
+There is no **download** cap anywhere in essaim; `up_limit` is upload only.
 
 ## Degrading honestly
 
