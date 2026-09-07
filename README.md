@@ -40,6 +40,42 @@ Verified end to end: a client that POSTs `"user_id":"SPOOFED"` gets its own id
 stored instead, because a scoped create stamps tenancy from the token. Two
 users, one shared torrent, and neither sees the other's note.
 
+## What the UI can and cannot do
+
+Set when you add a torrent:
+
+- **the full download path** — typed in, or defaulted from `ESSAIM_UI_DIR`
+- **seed on/off**, and an **upload cap in KB/s**
+- a private note
+
+Shown per torrent: the **full path on disk**, state, pieces, bytes, peers, seed
+status and cap, upload total, and any error the daemon reports.
+
+Removing offers two actions, because they are not the same decision:
+
+- **remove** — drops the entry, leaves the bytes (this is all essaim's own
+  `DELETE` does)
+- **remove + data** — also deletes `dir/name`, after a confirmation that names
+  the exact path. This is the only destructive thing essaim-ui does, so the
+  guards are deliberately paranoid: the name must be a single path element, the
+  target must resolve inside the directory, and a torrent whose metadata has
+  not resolved yet is refused outright rather than falling back to deleting the
+  directory itself.
+
+### Two things it cannot do yet, and why
+
+**Changing speed or seeding after a torrent is added.** essaim's daemon exposes
+`GET`/`POST /torrents` and `GET`/`DELETE /torrents/{id}` — there is no `PATCH`,
+so `seed` and `up_limit` are fixed at add time. The UI says so next to the
+controls rather than offering a switch that silently does nothing.
+
+**A seeding *ratio* limit** (`0.5`). essaim's cap is `up_limit` in **KB/s** — a
+rate, not a ratio — and it tracks `uploaded_bytes` but has no concept of a stop
+condition. A ratio limit needs essaim to grow one; it cannot be faked here
+without a background process second-guessing the daemon that owns the torrents.
+
+There is also no **download** cap anywhere in essaim; `up_limit` is upload only.
+
 ## Degrading honestly
 
 Torrents come from essaim and labels from bkn, so the two fail differently and

@@ -31,6 +31,10 @@ td.n{white-space:nowrap;color:var(--mut);font-variant-numeric:tabular-nums}
 .err{color:var(--bad);font-size:13px;margin-top:8px;white-space:pre-wrap}
 .mut{color:var(--mut)}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
 .hide{display:none}
+.chk{display:flex;align-items:center;gap:6px;font-size:14px;color:var(--fg);white-space:nowrap;padding:8px 0}
+.chk input{width:auto}
+.path{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--mut);word-break:break-all;margin-top:3px}
+.up{font-size:11px;color:var(--mut)}
 footer{margin-top:26px;font-size:12px;color:var(--mut)}
 </style>
 <div class="wrap">
@@ -50,16 +54,27 @@ footer{margin-top:26px;font-size:12px;color:var(--mut)}
     <div class="card">
       <div class="row">
         <div style="flex:3"><label>magnet, .torrent path or https URL</label><input id="src" placeholder="magnet:?xt=urn:btih:…"></div>
-        <div><label>note (optional, private to you)</label><input id="note"></div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <div style="flex:2"><label>download to (full path on disk)</label><input id="dir" placeholder="/srv/downloads"></div>
+        <div><label>note (private to you)</label><input id="note"></div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <div style="flex:0;min-width:auto"><label>seed</label>
+          <label class="chk"><input type="checkbox" id="seed"> share once complete</label></div>
+        <div style="max-width:190px"><label>upload cap KB/s (0 = uncapped)</label><input id="uplimit" type="number" min="0" step="50" value="0"></div>
         <div style="flex:0"><button id="add">add</button></div>
+      </div>
+      <div class="mut" style="font-size:12px;margin-top:8px">
+        seed and the upload cap are fixed when the torrent is added — essaim's daemon has no way to change them afterwards.
       </div>
       <div id="aerr" class="err"></div>
     </div>
 
     <div class="card">
       <table>
-        <thead><tr><th>torrent</th><th>state</th><th>pieces</th><th></th></tr></thead>
-        <tbody id="rows"><tr><td colspan="4" class="mut">loading…</td></tr></tbody>
+        <thead><tr><th>torrent</th><th>state</th><th>pieces</th><th>peers</th><th></th></tr></thead>
+        <tbody id="rows"><tr><td colspan="5" class="mut">loading…</td></tr></tbody>
       </table>
       <div id="terr" class="err"></div>
     </div>
@@ -73,6 +88,12 @@ footer{margin-top:26px;font-size:12px;color:var(--mut)}
 </div>
 <script>
 const $ = s => document.querySelector(s);
+const fmtBytes = n => {
+  if (!n) return "0 B";
+  const u = ["B","KB","MB","GB","TB"]; let i = 0; let v = n;
+  while (v >= 1024 && i < u.length-1) { v /= 1024; i++; }
+  return (i === 0 ? v : v.toFixed(1)) + " " + u[i];
+};
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let timer = null;
 
@@ -92,7 +113,7 @@ function show(signedIn, email) {
 async function boot() {
   const me = await api("/api/me");
   show(me.signed_in, me.email);
-  if (me.signed_in) { await refresh(); timer = setInterval(refresh, 2000); }
+  if (me.signed_in) { if (me.dir) $("#dir").placeholder = me.dir; await refresh(); timer = setInterval(refresh, 2000); }
   try {
     const h = await api("/_health");
     $("#health").textContent = "essaim " + (h.essaim?.ok ? h.essaim.version : "down") + " · bkn " + (h.bkn?.ok ? "up" : "down");
@@ -109,14 +130,21 @@ async function refresh() {
         const t = r.torrent, l = r.label;
         const pct = t.pieces_total > 0 ? Math.round(100 * t.pieces_done / t.pieces_total) : 0;
         const name = t.name || t.infohash || t.source;
+        const cap = t.up_limit_kbs > 0 ? t.up_limit_kbs + " KB/s" : "uncapped";
         return `<tr>
-          <td><div>${esc(name.length > 70 ? name.slice(0,70)+"…" : name)}</div>
+          <td><div>${esc(name.length > 66 ? name.slice(0,66)+"…" : name)}</div>
               ${l?.note ? `<div class="mut" style="font-size:12px">${esc(l.note)}</div>` : ""}
               ${l?.tag ? `<span class="tag">${esc(l.tag)}</span>` : ""}
+              <div class="path" title="full path on disk">${esc(r.path || t.dir)}</div>
+              <div class="up">${t.seed ? "seeding · " + esc(cap) + " · up " + fmtBytes(t.uploaded_bytes) : "not seeding"}${t.error ? " · <span style='color:var(--bad)'>"+esc(t.error)+"</span>" : ""}</div>
               <div class="bar"><i style="width:${pct}%"></i></div></td>
           <td class="st">${esc(t.state)}</td>
-          <td class="n">${t.pieces_done}/${t.pieces_total}</td>
-          <td><button class="link" data-rm="${esc(t.id)}">remove</button></td>
+          <td class="n">${t.pieces_done}/${t.pieces_total}<div class="mut" style="font-size:11px">${fmtBytes(t.bytes)}</div></td>
+          <td class="n">${t.peers}</td>
+          <td style="white-space:nowrap">
+            <button class="link" data-rm="${esc(t.id)}">remove</button><br>
+            <button class="link" data-rmd="${esc(t.id)}" data-path="${esc(r.path || "")}">remove + data</button>
+          </td>
         </tr>`;
       }).join("");
     }
@@ -138,14 +166,33 @@ $("#out").onclick = async () => { clearInterval(timer); await api("/api/logout",
 $("#add").onclick = async () => {
   $("#aerr").textContent = "";
   try {
-    await api("/api/torrents", {method:"POST", body: JSON.stringify({source:$("#src").value, note:$("#note").value})});
+    await api("/api/torrents", {method:"POST", body: JSON.stringify({
+      source: $("#src").value,
+      dir: $("#dir").value,
+      note: $("#note").value,
+      seed: $("#seed").checked,
+      up_limit: parseInt($("#uplimit").value || "0", 10)
+    })});
     $("#src").value = ""; $("#note").value = ""; await refresh();
   } catch (e) { $("#aerr").textContent = e.message; }
 };
 $("#rows").onclick = async e => {
-  const id = e.target?.dataset?.rm; if (!id) return;
-  try { await api("/api/torrents/" + encodeURIComponent(id), {method:"DELETE"}); await refresh(); }
-  catch (err) { $("#terr").textContent = err.message; }
+  const b = e.target;
+  const plain = b?.dataset?.rm, withData = b?.dataset?.rmd;
+  if (!plain && !withData) return;
+  if (withData) {
+    const p = b.dataset.path || "the downloaded files";
+    // Deleting bytes is not undoable, so it asks — and it names the exact path
+    // it is about to delete rather than a vague "are you sure".
+    if (!confirm("Delete this entry AND the data on disk?\n\n" + p + "\n\nThis cannot be undone.")) return;
+  }
+  try {
+    const id = plain || withData;
+    const d = await api("/api/torrents/" + encodeURIComponent(id) + (withData ? "?data=1" : ""), {method:"DELETE"});
+    if (withData && d.data_deleted === false) $("#terr").textContent = "entry removed, but the data was not: " + d.data_error;
+    else $("#terr").textContent = "";
+    await refresh();
+  } catch (err) { $("#terr").textContent = err.message; }
 };
 document.addEventListener("keydown", e => { if (e.key === "Enter" && !$("#login").classList.contains("hide")) $("#go").click(); });
 boot();

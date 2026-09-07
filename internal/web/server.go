@@ -176,7 +176,7 @@ func (s *Server) Routes() http.Handler {
 		}
 		out := make([]map[string]any, 0, len(ts))
 		for _, t := range ts {
-			row := map[string]any{"torrent": t}
+			row := map[string]any{"torrent": t, "path": fullPath(t.Dir, t.Name)}
 			if l, ok := byHash[t.Infohash]; ok && t.Infohash != "" {
 				row["label"] = l
 			}
@@ -230,12 +230,52 @@ func (s *Server) Routes() http.Handler {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "torrent": t})
 	}))
 
+	// ?data=1 also deletes the downloaded bytes. essaim's own DELETE never
+	// touches the filesystem, so this is the one destructive thing essaim-ui
+	// does and it is opt-in per request rather than a setting somebody forgets.
 	mux.HandleFunc("DELETE /api/torrents/{id}", s.authed(func(w http.ResponseWriter, r *http.Request, sess session) {
-		if err := s.Essaim.Remove(r.PathValue("id")); err != nil {
+		id := r.PathValue("id")
+		withData := r.URL.Query().Get("data") == "1"
+
+		var dir, name string
+		if withData {
+			// Resolve the paths BEFORE removing the record: afterwards the
+			// daemon has forgotten where the files were.
+			ts, err := s.Essaim.List()
+			if err != nil {
+				fail(w, http.StatusBadGateway, "essaim_unreachable", err.Error())
+				return
+			}
+			found := false
+			for _, t := range ts {
+				if t.ID == id {
+					dir, name, found = t.Dir, t.Name, true
+					break
+				}
+			}
+			if !found {
+				fail(w, http.StatusNotFound, "not_found", "no such torrent")
+				return
+			}
+		}
+
+		if err := s.Essaim.Remove(id); err != nil {
 			fail(w, http.StatusBadGateway, "essaim_error", err.Error())
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "removed": r.PathValue("id")})
+		res := map[string]any{"ok": true, "removed": id}
+		if withData {
+			if err := removeData(dir, name); err != nil {
+				// The entry is already gone, so this is a partial success and
+				// saying so is more useful than a bare 500.
+				res["data_deleted"] = false
+				res["data_error"] = err.Error()
+			} else {
+				res["data_deleted"] = true
+				res["path"] = fullPath(dir, name)
+			}
+		}
+		writeJSON(w, http.StatusOK, res)
 	}))
 
 	mux.HandleFunc("POST /api/labels", s.authed(func(w http.ResponseWriter, r *http.Request, sess session) {
