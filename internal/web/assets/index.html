@@ -1,0 +1,152 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>essaim</title>
+<style>
+:root{--bg:#faf9f7;--fg:#1d1c1a;--mut:#6b6862;--line:#e2ded7;--acc:#2f6f4f;--bad:#a33;color-scheme:light}
+@media(prefers-color-scheme:dark){:root{--bg:#16150f;--fg:#eceae4;--mut:#98938a;--line:#2e2c25;--acc:#7fbf9a;--bad:#e08585}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+.wrap{max-width:900px;margin:0 auto;padding:24px 18px 60px}
+h1{font-size:20px;margin:0 0 2px;letter-spacing:-.01em}
+.sub{color:var(--mut);font-size:13px;margin-bottom:22px}
+.card{border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:16px;background:transparent}
+label{display:block;font-size:12px;color:var(--mut);margin:0 0 4px}
+input,button,select{font:inherit;border-radius:7px;border:1px solid var(--line);padding:8px 10px;background:var(--bg);color:var(--fg)}
+input{width:100%}
+button{cursor:pointer;border-color:var(--acc);color:var(--acc);background:transparent}
+button:hover{background:var(--acc);color:var(--bg)}
+button.link{border:0;color:var(--mut);padding:2px 6px}
+button.link:hover{background:transparent;color:var(--bad)}
+.row{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
+.row>div{flex:1;min-width:180px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{text-align:left;font-weight:500;color:var(--mut);font-size:12px;border-bottom:1px solid var(--line);padding:6px 8px}
+td{padding:8px;border-bottom:1px solid var(--line);vertical-align:top}
+td.n{white-space:nowrap;color:var(--mut);font-variant-numeric:tabular-nums}
+.bar{height:5px;background:var(--line);border-radius:3px;overflow:hidden;margin-top:5px;min-width:90px}
+.bar>i{display:block;height:100%;background:var(--acc)}
+.st{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut)}
+.tag{display:inline-block;font-size:11px;border:1px solid var(--line);border-radius:99px;padding:1px 8px;color:var(--mut)}
+.err{color:var(--bad);font-size:13px;margin-top:8px;white-space:pre-wrap}
+.mut{color:var(--mut)}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+.hide{display:none}
+footer{margin-top:26px;font-size:12px;color:var(--mut)}
+</style>
+<div class="wrap">
+  <h1>essaim</h1>
+  <div class="sub">torrents from the daemon · labels from bkn, scoped to you</div>
+
+  <div id="login" class="card hide">
+    <div class="row">
+      <div><label>email</label><input id="email" type="email" autocomplete="username"></div>
+      <div><label>password</label><input id="pw" type="password" autocomplete="current-password"></div>
+      <div style="flex:0"><button id="go">sign in</button></div>
+    </div>
+    <div id="lerr" class="err"></div>
+  </div>
+
+  <div id="app" class="hide">
+    <div class="card">
+      <div class="row">
+        <div style="flex:3"><label>magnet, .torrent path or https URL</label><input id="src" placeholder="magnet:?xt=urn:btih:…"></div>
+        <div><label>note (optional, private to you)</label><input id="note"></div>
+        <div style="flex:0"><button id="add">add</button></div>
+      </div>
+      <div id="aerr" class="err"></div>
+    </div>
+
+    <div class="card">
+      <table>
+        <thead><tr><th>torrent</th><th>state</th><th>pieces</th><th></th></tr></thead>
+        <tbody id="rows"><tr><td colspan="4" class="mut">loading…</td></tr></tbody>
+      </table>
+      <div id="terr" class="err"></div>
+    </div>
+
+    <footer>
+      signed in as <span id="who" class="mono"></span> ·
+      <button class="link" id="out">sign out</button> ·
+      <span id="health" class="mut"></span>
+    </footer>
+  </div>
+</div>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let timer = null;
+
+async function api(path, opts) {
+  const r = await fetch(path, Object.assign({headers:{"Content-Type":"application/json"}}, opts||{}));
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body?.error?.message || r.statusText);
+  return body;
+}
+
+function show(signedIn, email) {
+  $("#login").classList.toggle("hide", signedIn);
+  $("#app").classList.toggle("hide", !signedIn);
+  if (email) $("#who").textContent = email;
+}
+
+async function boot() {
+  const me = await api("/api/me");
+  show(me.signed_in, me.email);
+  if (me.signed_in) { await refresh(); timer = setInterval(refresh, 2000); }
+  try {
+    const h = await api("/_health");
+    $("#health").textContent = "essaim " + (h.essaim?.ok ? h.essaim.version : "down") + " · bkn " + (h.bkn?.ok ? "up" : "down");
+  } catch {}
+}
+
+async function refresh() {
+  try {
+    const d = await api("/api/torrents");
+    const tb = $("#rows");
+    if (!d.rows.length) { tb.innerHTML = '<tr><td colspan="4" class="mut">nothing yet — add a magnet above</td></tr>'; }
+    else {
+      tb.innerHTML = d.rows.map(r => {
+        const t = r.torrent, l = r.label;
+        const pct = t.pieces_total > 0 ? Math.round(100 * t.pieces_done / t.pieces_total) : 0;
+        const name = t.name || t.infohash || t.source;
+        return `<tr>
+          <td><div>${esc(name.length > 70 ? name.slice(0,70)+"…" : name)}</div>
+              ${l?.note ? `<div class="mut" style="font-size:12px">${esc(l.note)}</div>` : ""}
+              ${l?.tag ? `<span class="tag">${esc(l.tag)}</span>` : ""}
+              <div class="bar"><i style="width:${pct}%"></i></div></td>
+          <td class="st">${esc(t.state)}</td>
+          <td class="n">${t.pieces_done}/${t.pieces_total}</td>
+          <td><button class="link" data-rm="${esc(t.id)}">remove</button></td>
+        </tr>`;
+      }).join("");
+    }
+    $("#terr").textContent = d.labels_error ? "labels unavailable: " + d.labels_error : "";
+  } catch (e) {
+    if (String(e.message).includes("sign in")) { clearInterval(timer); show(false); return; }
+    $("#terr").textContent = e.message;
+  }
+}
+
+$("#go").onclick = async () => {
+  $("#lerr").textContent = "";
+  try {
+    const d = await api("/api/login", {method:"POST", body: JSON.stringify({email:$("#email").value, password:$("#pw").value})});
+    show(true, d.email); $("#pw").value = ""; await refresh(); timer = setInterval(refresh, 2000);
+  } catch (e) { $("#lerr").textContent = e.message; }
+};
+$("#out").onclick = async () => { clearInterval(timer); await api("/api/logout", {method:"POST"}); show(false); };
+$("#add").onclick = async () => {
+  $("#aerr").textContent = "";
+  try {
+    await api("/api/torrents", {method:"POST", body: JSON.stringify({source:$("#src").value, note:$("#note").value})});
+    $("#src").value = ""; $("#note").value = ""; await refresh();
+  } catch (e) { $("#aerr").textContent = e.message; }
+};
+$("#rows").onclick = async e => {
+  const id = e.target?.dataset?.rm; if (!id) return;
+  try { await api("/api/torrents/" + encodeURIComponent(id), {method:"DELETE"}); await refresh(); }
+  catch (err) { $("#terr").textContent = err.message; }
+};
+document.addEventListener("keydown", e => { if (e.key === "Enter" && !$("#login").classList.contains("hide")) $("#go").click(); });
+boot();
+</script>
