@@ -45,7 +45,7 @@ users, one shared torrent, and neither sees the other's note.
 Set when you add a torrent:
 
 - **the full download path** — typed in, or defaulted from `ESSAIM_UI_DIR`
-- **seed on/off**, an **upload cap in KB/s**, and a **stop-at ratio**
+- **seed on/off**, **upload and download caps in KB/s**, and a **stop-at ratio**
 - a private note
 
 Shown per torrent: the **full path on disk**, state, pieces, bytes, peers, seed
@@ -72,9 +72,11 @@ Both of those needed essaim to grow the capability first — a `PATCH` route and
 a ratio concept — rather than being faked here by a process second-guessing the
 daemon that owns the torrents. They landed in essaim alongside `essaim set`.
 
-### Still not possible
-
-There is no **download** cap anywhere in essaim; `up_limit` is upload only.
+The **download cap** is there too, on the add form and per row. It is the one
+control that is not instant: essaim applies it when the torrent next starts,
+because its pacer takes its interval at job start and restarting a running job
+from the control loop would hang essaim's supervisor. The row says
+`saved · applies on next start` rather than implying otherwise.
 
 ## Degrading honestly
 

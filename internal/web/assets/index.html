@@ -67,7 +67,8 @@ footer{margin-top:26px;font-size:12px;color:var(--mut)}
       <div class="row" style="margin-top:10px">
         <div style="flex:0;min-width:auto"><label>seed</label>
           <label class="chk"><input type="checkbox" id="seed"> share once complete</label></div>
-        <div style="max-width:170px"><label>upload cap KB/s (0 = uncapped)</label><input id="uplimit" type="number" min="0" step="50" value="0"></div>
+        <div style="max-width:150px"><label>down cap KB/s (0 = off)</label><input id="downlimit" type="number" min="0" step="50" value="0"></div>
+        <div style="max-width:150px"><label>up cap KB/s (0 = off)</label><input id="uplimit" type="number" min="0" step="50" value="0"></div>
         <div style="max-width:170px"><label>stop at ratio (blank = never)</label><input id="ratio" type="number" min="0" step="0.1" placeholder="e.g. 0.5"></div>
         <div style="flex:0"><button id="add">add</button></div>
       </div>
@@ -147,15 +148,17 @@ async function refresh() {
         const pct = t.pieces_total > 0 ? Math.round(100 * t.pieces_done / t.pieces_total) : 0;
         const name = t.name || t.infohash || t.source;
         const cap = t.up_limit_kbs > 0 ? t.up_limit_kbs + " KB/s" : "uncapped";
+        const dcap = t.down_limit_kbs > 0 ? "down " + t.down_limit_kbs + " KB/s" : "down uncapped";
         return `<tr>
           <td><div>${esc(name.length > 66 ? name.slice(0,66)+"…" : name)}</div>
               ${l?.note ? `<div class="mut" style="font-size:12px">${esc(l.note)}</div>` : ""}
               ${l?.tag ? `<span class="tag">${esc(l.tag)}</span>` : ""}
               <div class="path" title="full path on disk">${esc(r.path || t.dir)}</div>
-              <div class="up">${t.seed ? "seeding · " + esc(cap) + " · up " + fmtBytes(t.uploaded_bytes) + ratioNote(t) : "not seeding"}${t.error ? " · <span style='color:var(--bad)'>"+esc(t.error)+"</span>" : ""}</div>
+              <div class="up">${esc(dcap)} · ${t.seed ? "seeding · up cap " + esc(cap) + " · up " + fmtBytes(t.uploaded_bytes) + ratioNote(t) : "not seeding"}${t.error ? " · <span style='color:var(--bad)'>"+esc(t.error)+"</span>" : ""}</div>
               <div class="ctl">
                 <label><input type="checkbox" data-seed="${esc(t.id)}" ${t.seed ? "checked" : ""}> seed</label>
-                <label>cap <input type="number" min="0" step="50" data-cap="${esc(t.id)}" value="${t.up_limit_kbs}"> KB/s</label>
+                <label>down <input type="number" min="0" step="50" data-down="${esc(t.id)}" value="${t.down_limit_kbs}"></label>
+                <label>up <input type="number" min="0" step="50" data-cap="${esc(t.id)}" value="${t.up_limit_kbs}"></label>
                 <label>ratio <input type="number" min="0" step="0.1" data-ratio="${esc(t.id)}" value="${t.ratio_limit_pct ? (t.ratio_limit_pct/100) : ""}" placeholder="none"></label>
                 <button data-apply="${esc(t.id)}">apply</button>
                 <span class="saved" id="saved-${esc(t.id)}"></span>
@@ -195,6 +198,7 @@ $("#add").onclick = async () => {
       note: $("#note").value,
       seed: $("#seed").checked,
       up_limit: parseInt($("#uplimit").value || "0", 10),
+      down_limit: parseInt($("#downlimit").value || "0", 10),
       ratio_limit_pct: $("#ratio").value.trim() === "" ? 0 : Math.round(parseFloat($("#ratio").value) * 100)
     })});
     $("#src").value = ""; $("#note").value = ""; $("#ratio").value = ""; await refresh();
@@ -206,14 +210,17 @@ $("#rows").onclick = async e => {
   if (id) {
     const seed = document.querySelector(`[data-seed="${id}"]`).checked;
     const cap = parseInt(document.querySelector(`[data-cap="${id}"]`).value || "0", 10);
+    const down = parseInt(document.querySelector(`[data-down="${id}"]`).value || "0", 10);
     const rv = document.querySelector(`[data-ratio="${id}"]`).value.trim();
     // A blank ratio means "no limit", which the daemon spells 0.
     const ratioPct = rv === "" ? 0 : Math.round(parseFloat(rv) * 100);
     try {
-      await api("/api/torrents/" + encodeURIComponent(id), {method:"PATCH",
-        body: JSON.stringify({seed: seed, up_limit: cap, ratio_limit_pct: ratioPct})});
+      const d = await api("/api/torrents/" + encodeURIComponent(id), {method:"PATCH",
+        body: JSON.stringify({seed: seed, up_limit: cap, down_limit: down, ratio_limit_pct: ratioPct})});
       const s = document.getElementById("saved-" + id);
-      if (s) { s.textContent = "saved"; setTimeout(() => { s.textContent = ""; }, 1500); }
+      // A download cap is not instant, and the row should not imply it is.
+      if (s) { s.textContent = d && d.note ? "saved · applies on next start" : "saved";
+        setTimeout(() => { s.textContent = ""; }, 2500); }
       $("#terr").textContent = "";
     } catch (err) { $("#terr").textContent = err.message; }
     return;

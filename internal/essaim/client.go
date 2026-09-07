@@ -43,8 +43,9 @@ type Torrent struct {
 	// The daemon READS seed as an int (parse_int on the request body) and
 	// WRITES it as a bool. Add() therefore sends 1 while this reads true —
 	// an asymmetry in essaim, not a mistake here.
-	Seed       bool `json:"seed"`
-	UpLimitKBs int  `json:"up_limit_kbs"`
+	Seed         bool `json:"seed"`
+	UpLimitKBs   int  `json:"up_limit_kbs"`
+	DownLimitKBs int  `json:"down_limit_kbs"`
 	// RatioPct is a stop condition in percent of what was downloaded: 50 is
 	// 0.5x, 200 is 2x, 0 never stops. Percent rather than a float because
 	// essaim has no floats, and the unit is in the name so nobody has to guess.
@@ -116,13 +117,16 @@ func (c *Client) List() ([]Torrent, error) {
 }
 
 // Add takes a magnet, a .torrent path or an https URL — essaim resolves which.
-func (c *Client) Add(source, dir string, seed bool, upLimit, ratioPct int) (Torrent, error) {
+func (c *Client) Add(source, dir string, seed bool, upLimit, downLimit, ratioPct int) (Torrent, error) {
 	body := map[string]any{"source": source, "dir": dir}
 	if seed {
 		body["seed"] = 1
 	}
 	if upLimit > 0 {
 		body["up_limit"] = upLimit
+	}
+	if downLimit > 0 {
+		body["down_limit"] = downLimit
 	}
 	if ratioPct > 0 {
 		body["ratio_limit_pct"] = ratioPct
@@ -141,7 +145,7 @@ func (c *Client) Remove(id string) error {
 // Patch adjusts a torrent that already exists. A nil field is left alone by the
 // daemon, so a caller changing one setting cannot silently reset another —
 // which is why these are pointers rather than zero-valued ints.
-func (c *Client) Patch(id string, seed *bool, upLimit, ratioPct *int) (Torrent, error) {
+func (c *Client) Patch(id string, seed *bool, upLimit, downLimit, ratioPct *int) (Torrent, error) {
 	body := map[string]any{}
 	if seed != nil {
 		// The daemon parses seed as an int on input and reports it as a bool.
@@ -155,6 +159,9 @@ func (c *Client) Patch(id string, seed *bool, upLimit, ratioPct *int) (Torrent, 
 	}
 	if upLimit != nil {
 		body["up_limit"] = *upLimit
+	}
+	if downLimit != nil {
+		body["down_limit"] = *downLimit
 	}
 	if ratioPct != nil {
 		body["ratio_limit_pct"] = *ratioPct

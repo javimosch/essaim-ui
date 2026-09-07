@@ -192,13 +192,14 @@ func (s *Server) Routes() http.Handler {
 
 	mux.HandleFunc("POST /api/torrents", s.authed(func(w http.ResponseWriter, r *http.Request, sess session) {
 		var body struct {
-			Source   string `json:"source"`
-			Dir      string `json:"dir"`
-			Seed     bool   `json:"seed"`
-			UpLimit  int    `json:"up_limit"`
-			RatioPct int    `json:"ratio_limit_pct"`
-			Note     string `json:"note"`
-			Tag      string `json:"tag"`
+			Source    string `json:"source"`
+			Dir       string `json:"dir"`
+			Seed      bool   `json:"seed"`
+			UpLimit   int    `json:"up_limit"`
+			DownLimit int    `json:"down_limit"`
+			RatioPct  int    `json:"ratio_limit_pct"`
+			Note      string `json:"note"`
+			Tag       string `json:"tag"`
 		}
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&body); err != nil {
 			fail(w, http.StatusBadRequest, "validation_error", "body must be JSON")
@@ -212,7 +213,7 @@ func (s *Server) Routes() http.Handler {
 		if dir == "" {
 			dir = s.Dir
 		}
-		t, err := s.Essaim.Add(body.Source, dir, body.Seed, body.UpLimit, body.RatioPct)
+		t, err := s.Essaim.Add(body.Source, dir, body.Seed, body.UpLimit, body.DownLimit, body.RatioPct)
 		if err != nil {
 			fail(w, http.StatusBadGateway, "essaim_error", err.Error())
 			return
@@ -284,15 +285,16 @@ func (s *Server) Routes() http.Handler {
 	// ratio to zero.
 	mux.HandleFunc("PATCH /api/torrents/{id}", s.authed(func(w http.ResponseWriter, r *http.Request, sess session) {
 		var body struct {
-			Seed     *bool `json:"seed"`
-			UpLimit  *int  `json:"up_limit"`
-			RatioPct *int  `json:"ratio_limit_pct"`
+			Seed      *bool `json:"seed"`
+			UpLimit   *int  `json:"up_limit"`
+			DownLimit *int  `json:"down_limit"`
+			RatioPct  *int  `json:"ratio_limit_pct"`
 		}
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&body); err != nil {
 			fail(w, http.StatusBadRequest, "validation_error", "body must be JSON")
 			return
 		}
-		if body.Seed == nil && body.UpLimit == nil && body.RatioPct == nil {
+		if body.Seed == nil && body.UpLimit == nil && body.DownLimit == nil && body.RatioPct == nil {
 			fail(w, http.StatusBadRequest, "validation_error", "nothing to change")
 			return
 		}
@@ -300,16 +302,28 @@ func (s *Server) Routes() http.Handler {
 			fail(w, http.StatusBadRequest, "validation_error", "upload cap cannot be negative")
 			return
 		}
+		if body.DownLimit != nil && *body.DownLimit < 0 {
+			fail(w, http.StatusBadRequest, "validation_error", "download cap cannot be negative")
+			return
+		}
 		if body.RatioPct != nil && *body.RatioPct < 0 {
 			fail(w, http.StatusBadRequest, "validation_error", "ratio cannot be negative")
 			return
 		}
-		t, err := s.Essaim.Patch(r.PathValue("id"), body.Seed, body.UpLimit, body.RatioPct)
+		t, err := s.Essaim.Patch(r.PathValue("id"), body.Seed, body.UpLimit, body.DownLimit, body.RatioPct)
 		if err != nil {
 			fail(w, http.StatusBadGateway, "essaim_error", err.Error())
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "torrent": t})
+		res := map[string]any{"ok": true, "torrent": t}
+		// Unlike the others, a download cap takes effect when the torrent next
+		// starts — the pacer takes its interval at job start, and restarting a
+		// running job from essaim's control loop would hang its supervisor.
+		// Saying so is better than a control that looks instant and is not.
+		if body.DownLimit != nil {
+			res["note"] = "download cap applies the next time this torrent starts"
+		}
+		writeJSON(w, http.StatusOK, res)
 	}))
 
 	mux.HandleFunc("POST /api/labels", s.authed(func(w http.ResponseWriter, r *http.Request, sess session) {
