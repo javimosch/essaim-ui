@@ -3,13 +3,33 @@
 A web UI for [essaim](https://github.com/javimosch/essaim), the agent-first
 BitTorrent client — with per-user state in [bkn](https://github.com/javimosch/bkn).
 
-One Go binary, one embedded page, no build step and no CDN.
+One static Go binary with the page embedded — no build step, no CDN, no
+node_modules. Deploying it is a copy.
+
+## Install
+
+```sh
+curl -fsSL -o essaim-ui https://github.com/javimosch/essaim-ui/releases/latest/download/essaim-ui-linux-amd64
+chmod +x essaim-ui && sudo mv essaim-ui /usr/local/bin/    # or ~/.local/bin, no root needed
+```
+
+Verify it if you like — the release carries a `.sha256` beside the binary.
+
+## Run
 
 ```sh
 essaim daemon start                       # essaim owns the torrents
 export BKN_ADMIN_TOKEN=...                # only for the next line
 essaim-ui setup                           # declare the bkn collection + policy
 essaim-ui serve                           # http://127.0.0.1:8687
+```
+
+You need three things running: **essaim** (the torrents), **bkn** (identity and
+your labels), and this. essaim-ui tells you which of them it cannot reach:
+
+```sh
+curl -s localhost:8687/_health
+{"ok":true,"service":"essaim-ui","essaim":{"ok":true,"version":"0.5.1"},"bkn":{"ok":true}}
 ```
 
 ## The split, and why it matters
