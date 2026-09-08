@@ -32,6 +32,19 @@ curl -s localhost:8687/_health
 {"ok":true,"service":"essaim-ui","essaim":{"ok":true,"version":"0.5.1"},"bkn":{"ok":true}}
 ```
 
+## If your daemon has a token
+
+essaim 0.5.6 gates every daemon route but `/_health` behind `--token`; before
+that only `/_shutdown` was checked, so a UI that sent nothing still worked. Give
+essaim-ui the same token or every call comes back 401:
+
+```sh
+essaim-ui config ESSAIM_TOKEN=<the daemon's --token>
+```
+
+A daemon on loopback with no token needs none of this — that is the default, and
+the desktop case.
+
 ## As a desktop app
 
 On your own machine the browser is the window, and signing in to your own
@@ -176,6 +189,7 @@ fails you are signed out rather than shown a stale error.
 | `ESSAIM_UI_PORT` | port used by `open` (default `8687`) |
 | `ESSAIM_UI_EMAIL` / `ESSAIM_UI_PASSWORD` | the bkn identity `--no-auth` uses for labels |
 | `ESSAIM_UI_ORG` | optional org for that identity |
+| `ESSAIM_TOKEN` | the essaim daemon's `--token`, if it has one |
 
 `serve` binds loopback. Off loopback, pass `--secure-cookie` and put TLS in
 front, or the browser will send the session token in clear.

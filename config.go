@@ -23,6 +23,7 @@ import (
 // environment into a process.
 var configKeys = []string{
 	"ESSAIM_URL",
+	"ESSAIM_TOKEN",
 	"BKN_URL",
 	"ESSAIM_UI_DIR",
 	"ESSAIM_UI_PORT",

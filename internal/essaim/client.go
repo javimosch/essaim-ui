@@ -20,10 +20,22 @@ import (
 type Client struct {
 	BaseURL string
 	HTTP    *http.Client
+
+	// Token is the daemon's --token, sent as X-Essaim-Token. essaim 0.5.6 gates
+	// every route but /_health behind it; before that only /_shutdown was
+	// checked, so a UI that sent nothing still worked against a daemon that
+	// had one. Empty is correct for the loopback default, which takes no token.
+	Token string
 }
 
 func New(baseURL string) *Client {
 	return &Client{BaseURL: baseURL, HTTP: &http.Client{Timeout: 15 * time.Second}}
+}
+
+func NewWithToken(baseURL, token string) *Client {
+	c := New(baseURL)
+	c.Token = token
+	return c
 }
 
 // Torrent mirrors the daemon's record. Progress is re-derived from the files
@@ -75,6 +87,9 @@ func (c *Client) do(method, path string, body any, out any) error {
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	if c.Token != "" {
+		req.Header.Set("X-Essaim-Token", c.Token)
+	}
 	res, err := c.HTTP.Do(req)
 	if err != nil {
 		return fmt.Errorf("essaim daemon unreachable at %s: %w", c.BaseURL, err)
@@ -91,6 +106,12 @@ func (c *Client) do(method, path string, body any, out any) error {
 		_ = json.Unmarshal(raw, &e)
 		if e.Error == "" {
 			e.Error = res.Status
+		}
+		// A 401 is almost always a missing ESSAIM_TOKEN rather than a wrong
+		// one, and the daemon's bare "bad or missing token" does not say where
+		// to put it.
+		if res.StatusCode == http.StatusUnauthorized {
+			return fmt.Errorf("the essaim daemon rejected this request (%s) -- set ESSAIM_TOKEN to its --token, e.g. essaim-ui config ESSAIM_TOKEN=...", e.Error)
 		}
 		return errors.New(e.Error)
 	}

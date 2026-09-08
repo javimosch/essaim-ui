@@ -108,7 +108,7 @@ func env(k, def string) string {
 }
 
 func clients() (*essaim.Client, *bknclient.Client) {
-	return essaim.New(env("ESSAIM_URL", "http://127.0.0.1:8686")),
+	return essaim.NewWithToken(env("ESSAIM_URL", "http://127.0.0.1:8686"), env("ESSAIM_TOKEN", "")),
 		bknclient.New(env("BKN_URL", "http://127.0.0.1:7799"))
 }
 
@@ -255,6 +255,7 @@ func guide() map[string]any {
 				"session table and no user database here: bkn already is the identity store.",
 		},
 		"gotchas": []string{
+			"essaim 0.5.6 gates every daemon route but /_health behind its --token; before that only /_shutdown was checked, so a UI that sent nothing still worked against a daemon that had one. Set ESSAIM_TOKEN to match, or every call is 401.",
 			"The UI shows torrents even when bkn is unreachable — it reports labels_error instead of failing the page. essaim not being reachable IS fatal for the list, because there is nothing to show.",
 			"An expired access token is refreshed once, transparently. If the refresh also fails you are signed out rather than shown a stale error.",
 			"Serving off loopback needs --secure-cookie and TLS in front, or the browser will send the session token in clear.",
