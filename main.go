@@ -190,7 +190,12 @@ func serve(args []string) {
 			}
 		}
 		if email == "" || pass == "" {
-			fmt.Fprintln(os.Stderr, "[serve] --no-auth: no ESSAIM_UI_EMAIL/ESSAIM_UI_PASSWORD -- torrents work, labels are off")
+			// bkn is OPTIONAL for desktop use. Labels need an identity, so
+			// without one there is nothing for bkn to do and no reason to
+			// mention it -- let alone report it as down.
+			srv.LabelsOff = true
+			fmt.Fprintln(os.Stderr, "[serve] --no-auth: no identity set, so labels are off and bkn is not used")
+			fmt.Fprintln(os.Stderr, "[serve] (torrents, speed caps, paths and removal all work without it)")
 		}
 	}
 	addr := host + ":" + strconv.Itoa(port)
@@ -212,6 +217,13 @@ func guide() map[string]any {
 	return map[string]any{
 		"essaim-ui": Version,
 		"one_liner": "A web UI for the essaim BitTorrent daemon, with per-user state in bkn.",
+		"requires": map[string]any{
+			"essaim": "REQUIRED. There is nothing to show without it.",
+			"bkn": "OPTIONAL. It provides identity, and labels are per-user state, so it is " +
+				"needed only for labels or for the multi-user sign-in flow. With --no-auth and " +
+				"no identity configured, bkn is not contacted at all and the page does not " +
+				"mention it -- listing, adding, caps, paths and removal all work without it.",
+		},
 		"model": map[string]any{
 			"split": "essaim owns torrents and re-derives progress from the files on disk. " +
 				"bkn owns identity and the user's own labels.",
@@ -255,6 +267,7 @@ func guide() map[string]any {
 				"session table and no user database here: bkn already is the identity store.",
 		},
 		"gotchas": []string{
+			"bkn is optional. Before 0.3.1 an unconfigured bkn was reported as \"bkn down\" with a labels_error banner, so a perfectly working desktop install looked broken; now labels are simply off and bkn is not contacted.",
 			"essaim 0.5.6 gates every daemon route but /_health behind its --token; before that only /_shutdown was checked, so a UI that sent nothing still worked against a daemon that had one. Set ESSAIM_TOKEN to match, or every call is 401.",
 			"The UI shows torrents even when bkn is unreachable — it reports labels_error instead of failing the page. essaim not being reachable IS fatal for the list, because there is nothing to show.",
 			"An expired access token is refreshed once, transparently. If the refresh also fails you are signed out rather than shown a stale error.",

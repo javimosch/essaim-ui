@@ -41,6 +41,13 @@ type Server struct {
 	// is simply unreachable.
 	NoAuth bool
 
+	// LabelsOff means bkn is not part of this deployment. Labels are per-USER
+	// state and cannot exist without an identity, so in NoAuth mode with none
+	// configured they are impossible -- and reporting that as "bkn down" told
+	// people a service they never asked for was broken, which made a working
+	// desktop install look like a failed one. Off is a state, not an error.
+	LabelsOff bool
+
 	mu    sync.Mutex
 	local Identity
 }
@@ -183,7 +190,13 @@ func (s *Server) Routes() http.Handler {
 		} else {
 			out["essaim"] = map[string]any{"ok": false, "error": err.Error()}
 		}
-		out["bkn"] = map[string]any{"ok": s.Bkn.Health() == nil}
+		// Not asking a service that is not part of this deployment: a probe
+		// that always fails is noise, and it costs a round trip per poll.
+		if s.LabelsOff {
+			out["bkn"] = map[string]any{"configured": false}
+		} else {
+			out["bkn"] = map[string]any{"ok": s.Bkn.Health() == nil, "configured": true}
+		}
 		writeJSON(w, http.StatusOK, out)
 	})
 
@@ -212,7 +225,8 @@ func (s *Server) Routes() http.Handler {
 			// The page keys its sign-in form off signed_in, so saying yes here
 			// is what makes the UI open straight onto the torrent list.
 			writeJSON(w, http.StatusOK, map[string]any{"ok": true, "signed_in": true,
-				"email": s.LocalEmail(), "dir": s.Dir, "no_auth": true})
+				"email": s.LocalEmail(), "dir": s.Dir, "no_auth": true,
+				"labels": !s.LabelsOff})
 			return
 		}
 		sess, ok := s.session(r)
@@ -233,11 +247,14 @@ func (s *Server) Routes() http.Handler {
 			return
 		}
 		var labels []bknclient.Label
-		lerr := s.withRefresh(w, sess, func(tok string) error {
-			var e error
-			labels, e = s.Bkn.Labels(tok)
-			return e
-		})
+		var lerr error
+		if !s.LabelsOff {
+			lerr = s.withRefresh(w, sess, func(tok string) error {
+				var e error
+				labels, e = s.Bkn.Labels(tok)
+				return e
+			})
+		}
 		byHash := map[string]bknclient.Label{}
 		for _, l := range labels {
 			byHash[l.Infohash] = l
@@ -251,6 +268,9 @@ func (s *Server) Routes() http.Handler {
 			out = append(out, row)
 		}
 		res := map[string]any{"ok": true, "rows": out}
+		if s.LabelsOff {
+			res["labels"] = "off"
+		}
 		if lerr != nil {
 			// The torrents are still worth showing; say why the labels are not.
 			res["labels_error"] = lerr.Error()

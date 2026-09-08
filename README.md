@@ -6,6 +6,9 @@ BitTorrent client — with per-user state in [bkn](https://github.com/javimosch/
 One static Go binary with the page embedded — no build step, no CDN, no
 node_modules. Deploying it is a copy.
 
+bkn is **optional**: for desktop use (`--no-auth`) essaim alone is enough, and
+bkn is what adds per-user labels. See [Do you need bkn?](#do-you-need-bkn).
+
 ## Install
 
 ```sh
@@ -44,6 +47,31 @@ essaim-ui config ESSAIM_TOKEN=<the daemon's --token>
 
 A daemon on loopback with no token needs none of this — that is the default, and
 the desktop case.
+
+## Do you need bkn?
+
+**For desktop use, no.** With `--no-auth`, essaim-ui runs against the essaim
+daemon alone: listing, adding by magnet, speed caps, seed and ratio controls,
+the path on disk and remove-with-data all work with no bkn anywhere. It is not
+contacted, and the page does not mention it.
+
+bkn is what you add when you want **labels** — your own note and tag per
+torrent. Those are per-user state, so they need an identity, which is the thing
+bkn provides:
+
+```sh
+essaim-ui config ESSAIM_UI_EMAIL=you@example.com ESSAIM_UI_PASSWORD=...
+```
+
+You also need bkn if you want the **sign-in** flow instead of `--no-auth` — for
+example serving the UI to more than one person, where each sees only their own
+labels. That is what the access policy in `setup` is for.
+
+| you want | essaim | bkn |
+|---|---|---|
+| a torrent client with a browser UI | yes | — |
+| …plus your own notes and tags | yes | yes |
+| …plus separate users, each with their own | yes | yes |
 
 ## As a desktop app
 

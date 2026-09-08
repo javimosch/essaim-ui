@@ -44,7 +44,7 @@ footer{margin-top:26px;font-size:12px;color:var(--mut)}
 </style>
 <div class="wrap">
   <h1>essaim</h1>
-  <div class="sub">torrents from the daemon · labels from bkn, scoped to you</div>
+  <div class="sub" id="sub">torrents from the daemon · labels from bkn, scoped to you</div>
 
   <div id="login" class="card hide">
     <div class="row">
@@ -128,6 +128,7 @@ async function boot() {
   const me = await api("/api/me");
   // In no-auth mode there is nothing to sign out OF, and offering it would
   // strand the user on a sign-in form they have no credentials for.
+  if (me.labels === false) $("#sub").textContent = "torrents from the daemon";
   if (me.no_auth) {
     $("#out").classList.add("hide");
     if (!me.email) $("#who").textContent = "local";
@@ -136,7 +137,10 @@ async function boot() {
   if (me.signed_in) { if (me.dir) $("#dir").placeholder = me.dir; await refresh(); timer = setInterval(refresh, 2000); }
   try {
     const h = await api("/_health");
-    $("#health").textContent = "essaim " + (h.essaim?.ok ? h.essaim.version : "down") + " · bkn " + (h.bkn?.ok ? "up" : "down");
+    // bkn is optional: when it is not part of this deployment, saying nothing
+    // beats saying "down" about something nobody configured.
+    const bkn = h.bkn?.configured === false ? "" : " · bkn " + (h.bkn?.ok ? "up" : "down");
+    $("#health").textContent = "essaim " + (h.essaim?.ok ? h.essaim.version : "down") + bkn;
   } catch {}
 }
 
@@ -180,7 +184,7 @@ async function refresh() {
         </tr>`;
       }).join("");
     }
-    $("#terr").textContent = d.labels_error ? "labels unavailable: " + d.labels_error : "";
+    $("#terr").textContent = (d.labels_error && d.labels !== "off") ? "labels unavailable: " + d.labels_error : "";
   } catch (e) {
     if (String(e.message).includes("sign in")) { clearInterval(timer); show(false); return; }
     $("#terr").textContent = e.message;
