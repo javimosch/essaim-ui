@@ -64,12 +64,26 @@ Labels are per-user, so they still need an identity. Set `ESSAIM_UI_EMAIL` and
 torrents work and the page reports `labels_error` — the same way it behaves when
 bkn is simply down.
 
-Two things that surprise people:
+### Configure it where the launcher can see it
 
-- A launcher entry inherits the **desktop session's** environment, not your
-  shell's. `ESSAIM_URL` exported in `~/.bashrc` will not reach it.
-- `Exec` pins the binary's path at install time. Re-run `install-desktop` after
-  moving or reinstalling it.
+A `.desktop` entry does not inherit your shell, so `ESSAIM_URL` exported in
+`~/.bashrc` never reaches the icon — it starts on the defaults and reports
+`bkn unreachable at 127.0.0.1:7799`, which looks like a broken install. Put
+settings in the config file instead:
+
+```sh
+essaim-ui config BKN_URL=http://127.0.0.1:7799 ESSAIM_UI_EMAIL=you@example.com
+essaim-ui config                      # show what is set (passwords redacted)
+essaim-ui config ESSAIM_UI_ORG=       # empty value removes a key
+```
+
+It lives at `~/.config/essaim-ui/config.json`, mode `600` because it can hold a
+password, and only the known keys are read from it. Precedence is
+**flags > environment > this file > defaults**, so nothing in the file can
+override a choice you made on the command line.
+
+One more thing: `Exec` pins the binary's path at install time. Re-run
+`install-desktop` after moving or reinstalling it.
 
 ## The split, and why it matters
 

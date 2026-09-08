@@ -34,6 +34,9 @@ func main() {
 		usage()
 		os.Exit(exitUsage)
 	}
+	// Before dispatch, so every command sees the same settings -- including the
+	// server the desktop icon spawns, which has no shell environment at all.
+	loadConfig()
 	switch os.Args[1] {
 	case "serve":
 		serve(os.Args[2:])
@@ -41,6 +44,8 @@ func main() {
 		setup()
 	case "open":
 		open(os.Args[2:])
+	case "config":
+		config(os.Args[2:])
 	case "install-desktop":
 		installDesktop()
 	case "uninstall-desktop":
@@ -77,6 +82,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  essaim-ui serve [--port N]      serve the UI (--no-auth for desktop use)")
 	fmt.Fprintln(os.Stderr, "  essaim-ui open                  start it if needed and open the browser")
 	fmt.Fprintln(os.Stderr, "  essaim-ui install-desktop       add a launcher icon (uninstall-desktop removes it)")
+	fmt.Fprintln(os.Stderr, "  essaim-ui config [KEY=VALUE]    show or set settings the launcher can see")
 	fmt.Fprint(os.Stderr, "  essaim-ui guide | help-json | version\n\n")
 	fmt.Fprintln(os.Stderr, "  ESSAIM_URL   default http://127.0.0.1:8686")
 	fmt.Fprintln(os.Stderr, "  BKN_URL      default http://127.0.0.1:7799")
@@ -232,9 +238,12 @@ func guide() map[string]any {
 				"ESSAIM_UI_EMAIL and ESSAIM_UI_PASSWORD and the server signs in once at " +
 				"startup; with neither, torrents work and the page reports labels_error, " +
 				"exactly as it does when bkn is down.",
-			"env": "A launcher inherits the DESKTOP session's environment, not your shell's. " +
-				"ESSAIM_URL/BKN_URL/ESSAIM_UI_EMAIL set in ~/.bashrc will NOT reach it -- put " +
-				"them somewhere the session reads, or accept the defaults.",
+			"env": "A launcher inherits the DESKTOP session's environment, not your shell's, so " +
+				"ESSAIM_URL/BKN_URL/ESSAIM_UI_EMAIL exported in ~/.bashrc never reach it -- the " +
+				"icon starts on defaults and reports bkn unreachable at 127.0.0.1:7799, which " +
+				"looks like a broken install. Use `essaim-ui config KEY=VALUE`, which writes " +
+				"~/.config/essaim-ui/config.json (mode 600, known keys only). Precedence is " +
+				"flags > environment > file > defaults.",
 			"path": "The .desktop Exec pins the binary's path at install time. Re-run " +
 				"install-desktop after moving or reinstalling it.",
 		},
@@ -269,6 +278,7 @@ func helpJSON() map[string]any {
 			"setup":             c(none, none),
 			"serve":             c(none, []string{"--host <h>", "--port <n>", "--secure-cookie", "--no-auth"}),
 			"open":              c(none, []string{"--port <n>", "--no-spawn"}),
+			"config":            c([]string{"[KEY=VALUE ...]"}, none),
 			"install-desktop":   c(none, none),
 			"uninstall-desktop": c(none, none),
 			"guide":             c(none, none),
