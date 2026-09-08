@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/javimosch/essaim-ui/internal/bknclient"
@@ -27,6 +28,44 @@ type Server struct {
 	Bkn      *bknclient.Client
 	Dir      string // default download directory offered to the browser
 	Insecure bool   // allow the session cookie over plain http (local testing)
+
+	// NoAuth drops the sign-in gate, for the case this UI is a desktop app on
+	// somebody's own machine: the browser is the window, and asking a person to
+	// authenticate to their own torrent client is ceremony, not security. It is
+	// refused off loopback in main, because without the gate every caller can
+	// add a magnet and delete files.
+	//
+	// Labels are per-USER state, so they need an identity even here. Local
+	// carries the one configured at startup, if any; with none, label calls
+	// fail and the page reports labels_error, which it already does when bkn
+	// is simply unreachable.
+	NoAuth bool
+
+	mu    sync.Mutex
+	local Identity
+}
+
+// SetLocal installs the standing identity. Called once before serving.
+func (s *Server) SetLocal(id Identity) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.local = id
+}
+
+// LocalEmail is the standing identity's email, or "" if there is none.
+func (s *Server) LocalEmail() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.local.Email
+}
+
+// Identity is a bkn session this process holds on the user's behalf in NoAuth
+// mode. It is a normal user token -- never an admin one, which would let the
+// UI read every tenant's labels and defeat the point of the access policy.
+type Identity struct {
+	Access  string
+	Refresh string
+	Email   string
 }
 
 type session struct {
@@ -87,6 +126,10 @@ func fail(w http.ResponseWriter, status int, typ, msg string) {
 // 15-minute session and a usable one.
 func (s *Server) authed(next func(http.ResponseWriter, *http.Request, session)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if s.NoAuth {
+			next(w, r, s.localSession())
+			return
+		}
 		sess, ok := s.session(r)
 		if !ok {
 			fail(w, http.StatusUnauthorized, "not_authenticated", "sign in first")
@@ -94,6 +137,15 @@ func (s *Server) authed(next func(http.ResponseWriter, *http.Request, session)) 
 		}
 		next(w, r, sess)
 	}
+}
+
+// localSession is the standing identity used in NoAuth mode. An empty one is
+// fine and deliberate: the torrent routes never look at the token, and the
+// label routes fail in a way the page already renders.
+func (s *Server) localSession() session {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return session{Access: s.local.Access, Refresh: s.local.Refresh, Email: s.local.Email}
 }
 
 // withRefresh retries an operation once after refreshing, so an expired access
@@ -108,7 +160,16 @@ func (s *Server) withRefresh(w http.ResponseWriter, sess session, op func(token 
 		return err // report the original failure, not the refresh's
 	}
 	sess.Access, sess.Refresh = t.AccessToken, t.RefreshToken
-	s.setSession(w, sess)
+	// In NoAuth mode there is no cookie to update -- the rotated tokens have to
+	// go back into the standing identity, or every request refreshes again and
+	// the refresh token, which bkn rotates, is spent.
+	if s.NoAuth {
+		s.mu.Lock()
+		s.local.Access, s.local.Refresh = t.AccessToken, t.RefreshToken
+		s.mu.Unlock()
+	} else {
+		s.setSession(w, sess)
+	}
 	return op(sess.Access)
 }
 
@@ -147,6 +208,13 @@ func (s *Server) Routes() http.Handler {
 	})
 
 	mux.HandleFunc("GET /api/me", func(w http.ResponseWriter, r *http.Request) {
+		if s.NoAuth {
+			// The page keys its sign-in form off signed_in, so saying yes here
+			// is what makes the UI open straight onto the torrent list.
+			writeJSON(w, http.StatusOK, map[string]any{"ok": true, "signed_in": true,
+				"email": s.LocalEmail(), "dir": s.Dir, "no_auth": true})
+			return
+		}
 		sess, ok := s.session(r)
 		if !ok {
 			writeJSON(w, http.StatusOK, map[string]any{"ok": true, "signed_in": false})

@@ -32,6 +32,45 @@ curl -s localhost:8687/_health
 {"ok":true,"service":"essaim-ui","essaim":{"ok":true,"version":"0.5.1"},"bkn":{"ok":true}}
 ```
 
+## As a desktop app
+
+On your own machine the browser is the window, and signing in to your own
+torrent client is ceremony rather than security. `install-desktop` puts an icon
+in the launcher:
+
+```sh
+essaim-ui install-desktop     # icon + .desktop entry under ~/.local/share
+essaim-ui uninstall-desktop   # removes both
+```
+
+The icon runs `essaim-ui open`, which starts the server if nothing is answering
+and then opens the browser — so clicking it twice shows the app twice instead of
+failing on a taken port. You can run it by hand too:
+
+```sh
+essaim-ui open                # start if needed, then open the browser
+essaim-ui open --no-spawn     # only open; fail if nothing is serving
+essaim-ui serve --no-auth     # the mode the launcher uses
+```
+
+**`--no-auth` is loopback-only, and there is no flag to override that.** Without
+the sign-in gate, every caller can add a magnet, retarget a download directory
+and delete files off the disk; that is a fair trade on a machine you are sitting
+at and an open remote-control API on anything else. Asking for it on any other
+address is refused.
+
+Labels are per-user, so they still need an identity. Set `ESSAIM_UI_EMAIL` and
+`ESSAIM_UI_PASSWORD` and the server signs in once at startup; with neither, the
+torrents work and the page reports `labels_error` — the same way it behaves when
+bkn is simply down.
+
+Two things that surprise people:
+
+- A launcher entry inherits the **desktop session's** environment, not your
+  shell's. `ESSAIM_URL` exported in `~/.bashrc` will not reach it.
+- `Exec` pins the binary's path at install time. Re-run `install-desktop` after
+  moving or reinstalling it.
+
 ## The split, and why it matters
 
 ```
@@ -119,6 +158,10 @@ fails you are signed out rather than shown a stale error.
 | `BKN_URL` | bkn (default `http://127.0.0.1:7799`) |
 | `BKN_ADMIN_TOKEN` | `setup` only — never read while serving |
 | `ESSAIM_UI_DIR` | default download directory offered to the browser |
+| `ESSAIM_UI_NO_AUTH` | set to anything to imply `--no-auth` |
+| `ESSAIM_UI_PORT` | port used by `open` (default `8687`) |
+| `ESSAIM_UI_EMAIL` / `ESSAIM_UI_PASSWORD` | the bkn identity `--no-auth` uses for labels |
+| `ESSAIM_UI_ORG` | optional org for that identity |
 
 `serve` binds loopback. Off loopback, pass `--secure-cookie` and put TLS in
 front, or the browser will send the session token in clear.

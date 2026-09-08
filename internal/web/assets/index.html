@@ -126,6 +126,12 @@ function show(signedIn, email) {
 
 async function boot() {
   const me = await api("/api/me");
+  // In no-auth mode there is nothing to sign out OF, and offering it would
+  // strand the user on a sign-in form they have no credentials for.
+  if (me.no_auth) {
+    $("#out").classList.add("hide");
+    if (!me.email) $("#who").textContent = "local";
+  }
   show(me.signed_in, me.email);
   if (me.signed_in) { if (me.dir) $("#dir").placeholder = me.dir; await refresh(); timer = setInterval(refresh, 2000); }
   try {
